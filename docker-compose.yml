@@ -1,0 +1,14 @@
+# Meridian Electronics chat UI — loads OPENAI_API_KEY, MCP_URL, LangSmith, etc. from `.env`.
+# Usage (repo root): docker compose up --build
+# UI: http://localhost:8000
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: unless-stopped
