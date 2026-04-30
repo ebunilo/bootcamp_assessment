@@ -155,7 +155,7 @@ Exploration was performed with **`explore_mcp.py`** against the configured endpo
 ![Product Demo](https://www.loom.com/share/0409f0d674594372903d3086c53c1090)
 
 ### Test from Deployed App. (Note the url)
-![Live Customer support](images/inference.png)
+![Live Customer support](images/inference_02.png)
 
 ## Test Guarails
 ![Guardrail test](images/guardrail.png)
