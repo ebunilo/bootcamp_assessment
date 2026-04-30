@@ -118,6 +118,11 @@ End-user text is checked **server-side** before it is stored in the model conver
 
 Heuristics **reduce** prompt injection, jailbreak-style text, and pasted “run this code” content; they do **not** replace authentication, rate limits, WAFs, content moderation APIs, or secure design of the MCP backend. Tight phrase lists can occasionally **false-positive** on rare legitimate wording; tune **`_BLOCK_PHRASES`** / **`_BLOCK_MARKERS`** in [`guardrails.py`](guardrails.py) if needed.
 
+## Web UI, Uvicorn, and Docker
+
+- Local / server process: `uvicorn web_app:app --host 0.0.0.0 --port 9100` (see [`web_app.py`](web_app.py) module docstring).
+- **Docker** ([`Dockerfile`](Dockerfile), [`docker-compose.yml`](docker-compose.yml)): the app listens on **9100** inside the container; Compose publishes **`9100:9100`**. Open **`http://<host>:9100`**. Repo root [`docker-compose.yml`](../docker-compose.yml) uses build context **`./bootcamp_assessment`**.
+
 ---
 
 Exploration was performed with **`explore_mcp.py`** against the configured endpoint; tool descriptions and schemas match what the server returned from **`tools/list`**.
