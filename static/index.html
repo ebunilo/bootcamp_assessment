@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Meridian Electronics — Support</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/chat.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div class="brand-text">
+          <h1>Meridian Electronics</h1>
+          <p>Customer support · AI assistant</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span id="status-pill" class="pill pill-muted" role="status">Connecting…</span>
+        <button type="button" id="btn-new-chat" class="btn btn-ghost">New chat</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section id="chat-panel" class="chat-panel" aria-label="Conversation">
+        <div id="welcome" class="welcome">
+          <h2>How can we help?</h2>
+          <p>Ask about product availability, your orders, or sign in with your email and PIN. Replies stream live as the assistant works.</p>
+          <ul class="chips" aria-label="Suggestions">
+            <li><button type="button" class="chip" data-msg="What monitors do you have in stock?">Browse monitors</button></li>
+            <li><button type="button" class="chip" data-msg="How do I check my order history?">Order history</button></li>
+            <li><button type="button" class="chip" data-msg="I need to verify my account with my email and PIN.">Account help</button></li>
+          </ul>
+        </div>
+        <div id="messages" class="messages" hidden></div>
+      </section>
+
+      <footer class="composer-wrap">
+        <form id="composer" class="composer" autocomplete="off">
+          <label class="sr-only" for="msg-input">Your message</label>
+          <textarea
+            id="msg-input"
+            name="message"
+            rows="1"
+            maxlength="16000"
+            placeholder="Type your question…"
+            required
+          ></textarea>
+          <button type="submit" class="btn btn-primary" id="btn-send" aria-label="Send">
+            <span class="btn-send-label">Send</span>
+            <span class="btn-send-spinner" hidden aria-hidden="true"></span>
+          </button>
+        </form>
+        <p class="fine-print">AI-generated answers use live inventory and order data. For billing disputes or warranty claims, ask for a human agent.</p>
+      </footer>
+    </main>
+  </div>
+  <script src="/assets/chat.js" type="module"></script>
+</body>
+</html>
