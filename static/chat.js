@@ -110,7 +110,16 @@ async function streamChat(userText) {
 
   if (!res.ok || !res.body) {
     const errText = await res.text().catch(() => "");
-    throw new Error(errText || `Request failed (${res.status})`);
+    let msg = errText || `Request failed (${res.status})`;
+    try {
+      const j = JSON.parse(errText);
+      if (typeof j.detail === "string") msg = j.detail;
+      else if (Array.isArray(j.detail))
+        msg = j.detail.map((d) => (d && (d.msg || d.message)) || "").filter(Boolean).join(" ");
+    } catch (_) {
+      /* plain text */
+    }
+    throw new Error(msg);
   }
 
   const reader = res.body.getReader();
@@ -139,6 +148,8 @@ async function streamChat(userText) {
         appendToolStrip(current.wrap, ev.name, ev.ok, ev.preview || "");
       } else if (ev.type === "error") {
         assistantBubble.textContent += (assistantBubble.textContent ? "\n\n" : "") + "Error: " + ev.message;
+      } else if (ev.type === "guardrail") {
+        assistantBubble.textContent = ev.message || assistantBubble.textContent;
       } else if (ev.type === "turn_done") {
         if (ev.limited) {
           const foot = document.createElement("div");

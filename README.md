@@ -80,6 +80,44 @@ Tool responses in JSON-RPC `tools/call` results included **`content`** (e.g. `ty
 - [`test_data.csv`](test_data.csv) — source table (`Email`, `Pin`).
 - [`test_data.json`](test_data.json) — same rows as objects with lowercase keys `email` / `pin`, suitable for scripting and for **`verify-test-data`**.
 
+## Input guardrails
+
+End-user text is checked **server-side** before it is stored in the model conversation or sent to the LLM. Implementation lives in [`guardrails.py`](guardrails.py). The API returns a **generic, customer-safe refusal** (see `MSG_BLOCKED` in that file); the original message is **not** echoed in error responses.
+
+### API
+
+- **`validate_customer_message(raw: str) -> str`** — strips unsafe control characters, normalizes whitespace, then runs policy checks. On success, returns the sanitized string; on failure, raises **`GuardrailError`** with **`public_message`** (always the standard refusal unless customized later) and **`code`** (machine-readable reason for logging).
+
+### Checks performed
+
+| Category | What happens |
+|----------|----------------|
+| **Sanitization** | Removes **null bytes** and most **Unicode control** characters (keeps `\n`, `\r`, `\t`). Collapses runs of **12+ spaces/tabs**. Applies **NFKC** normalization and strips common **zero-width** characters for substring checks. Empty-after-strip input is rejected (`code=empty`). |
+| **Length** | Messages longer than **16 000** characters are rejected (`too_long`), aligned with the chat API schema. |
+| **Instruction / jailbreak phrases** | Substring checks on **NFKC + casefold** text against **`_BLOCK_PHRASES`** (e.g. attempts to override prior instructions, “developer mode”, prompt exfiltration, DAN-style wording, “uncensored” / “bypass” phrasing, etc.). Match → `instruction_injection`. |
+| **Channel smuggling** | Substring checks for **`_BLOCK_MARKERS`** (e.g. fake `system` code fences, bracketed `system` channels, common chat-template delimiters). Match → `channel_smuggling`. |
+| **Malicious / execution patterns** | Regex set **`_BLOCK_REGEX`** on the post-strip text: e.g. `eval(`, `exec(`, `os.system`, `subprocess`, `__import__`, suspicious `compile(`, triple-backtick fenced `python` / shell blocks, and a few high-risk library / shell patterns. Match → `unsafe_code`. |
+| **Spam / obfuscation** | If the message is long enough, **one character** dominating a large fraction of non-space content triggers `spam_pattern`. |
+| **Role confusion** | Four or more lines matching `system:` / `assistant:` / `user:` / `tool:` at line start (with content) → `role_confusion`. |
+| **Format abuse** | More than **80** newlines, or a run of **25+** consecutive newlines → `format_abuse`. |
+
+### Model policy (defense in depth)
+
+[`chat_service.py`](chat_service.py) appends a short **Security** block to **`SYSTEM_PROMPT`**: user text is **untrusted**; the model should not follow conflicting “privileged mode” instructions, reveal hidden prompts, or treat user content as executable code.
+
+### Where it runs
+
+| Location | Behavior |
+|----------|----------|
+| [`web_app.py`](web_app.py) | **`POST /api/chat/stream`**: runs **`validate_customer_message`** before appending the user turn. On failure → **HTTP 400** with JSON **`detail`** = the public refusal. Set **`GUARDRAIL_LOG=1`** to log **`[guardrail] blocked code=…`** to stderr (no user text). |
+| [`chat_service.py`](chat_service.py) | **`_sanitize_tail_user_message`** re-validates the **last** message if it is a **`user`** turn at the start of **`run_turn`** and **`stream_turn`**. If the web layer is bypassed, a bad user turn is **dropped** and a refusal is returned: sync path appends an **assistant** message; streaming path emits **`guardrail`** then **`turn_done`**. |
+| [`chatbot.py`](chatbot.py) | CLI validates each line before enqueueing; prints the refusal and continues. |
+| [`static/chat.js`](static/chat.js) | Handles SSE **`guardrail`** events; for **400** responses, parses FastAPI **`detail`** so the user sees the refusal string instead of raw JSON. |
+
+### Limitations
+
+Heuristics **reduce** prompt injection, jailbreak-style text, and pasted “run this code” content; they do **not** replace authentication, rate limits, WAFs, content moderation APIs, or secure design of the MCP backend. Tight phrase lists can occasionally **false-positive** on rare legitimate wording; tune **`_BLOCK_PHRASES`** / **`_BLOCK_MARKERS`** in [`guardrails.py`](guardrails.py) if needed.
+
 ---
 
 Exploration was performed with **`explore_mcp.py`** against the configured endpoint; tool descriptions and schemas match what the server returned from **`tools/list`**.

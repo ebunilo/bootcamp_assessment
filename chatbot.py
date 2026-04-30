@@ -20,6 +20,7 @@ from typing import Any
 from openai import OpenAI
 
 from chat_service import DEFAULT_MODEL, SYSTEM_PROMPT, run_turn
+from guardrails import GuardrailError, validate_customer_message
 from mcp_client import (
     env_mcp_insecure,
     load_dotenv,
@@ -28,10 +29,12 @@ from mcp_client import (
     mcp_tools_to_openai_functions,
     ssl_context_from_insecure_flag,
 )
+from observability import configure_langsmith, instrument_openai
 
 
 def main() -> None:
     load_dotenv()
+    configure_langsmith()
     parser = argparse.ArgumentParser(description="Meridian Electronics MCP chatbot")
     parser.add_argument(
         "--model",
@@ -73,7 +76,7 @@ def main() -> None:
     mcp_tools = listed.get("result", {}).get("tools") or []
     openai_tools = mcp_tools_to_openai_functions(mcp_tools)
 
-    client = OpenAI(api_key=api_key)
+    client = instrument_openai(OpenAI(api_key=api_key))
     tool_id_counter = [100]
 
     print(
@@ -94,7 +97,13 @@ def main() -> None:
         if line.lower() in ("quit", "exit", "q"):
             break
 
-        messages.append({"role": "user", "content": line})
+        try:
+            safe_line = validate_customer_message(line)
+        except GuardrailError as e:
+            print(f"Assistant: {e.public_message}\n")
+            continue
+
+        messages.append({"role": "user", "content": safe_line})
         messages, limited = run_turn(
             client,
             args.model,

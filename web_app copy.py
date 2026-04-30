@@ -4,7 +4,8 @@ Meridian Electronics — customer-facing chat UI (FastAPI + SSE streaming).
 
   cd bootcamp_assessment && python3 -m uvicorn web_app:app --reload --host 0.0.0.0 --port 8000
 
-Env: OPENAI_API_KEY, MCP_URL, OPENAI_MODEL (optional), MCP_INSECURE (optional).
+Env: OPENAI_API_KEY, MCP_URL, OPENAI_MODEL (optional), MCP_INSECURE (optional),
+     LANGSMITH_API_KEY + LANGSMITH_TRACING (optional, see observability.py).
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from chat_service import SYSTEM_PROMPT, default_model, stream_turn
+from guardrails import GuardrailError, validate_customer_message
 from mcp_client import (
     env_mcp_insecure,
     load_dotenv,
@@ -36,6 +38,7 @@ from mcp_client import (
     mcp_tools_to_openai_functions,
     ssl_context_from_insecure_flag,
 )
+from observability import configure_langsmith, instrument_openai, langsmith_enabled
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 MAX_SESSIONS = 2000
@@ -77,6 +80,12 @@ def _evict_sessions_if_needed() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_dotenv()
+    configure_langsmith()
+    if langsmith_enabled():
+        print(
+            f"LangSmith tracing on (project={os.environ.get('LANGSMITH_PROJECT', 'default')})",
+            file=sys.stderr,
+        )
     mcp_url = os.environ.get("MCP_URL", "").strip()
     if not mcp_url:
         print("WARNING: MCP_URL not set — chat will fail until configured.", file=sys.stderr)
@@ -114,7 +123,8 @@ async def lifespan(app: FastAPI):
     app_state["mcp_url"] = mcp_url
     app_state["ssl_ctx"] = ssl_ctx
     app_state["openai_tools"] = openai_tools
-    app_state["client"] = OpenAI(api_key=api_key) if api_key else None
+    base_client = OpenAI(api_key=api_key) if api_key else None
+    app_state["client"] = instrument_openai(base_client) if base_client else None
     app_state["model"] = default_model()
     app_state["max_tool_rounds"] = int(os.environ.get("MAX_TOOL_ROUNDS", "12"))
 
@@ -178,11 +188,18 @@ async def chat_stream(body: ChatRequest):
     if not sess:
         raise HTTPException(status_code=404, detail="Unknown session.")
 
+    try:
+        safe_message = validate_customer_message(body.message)
+    except GuardrailError as e:
+        if os.environ.get("GUARDRAIL_LOG", "").strip().lower() in ("1", "true", "yes"):
+            print(f"[guardrail] blocked code={e.code}", file=sys.stderr)
+        raise HTTPException(status_code=400, detail=e.public_message) from e
+
     def sse_bytes() -> Any:
         lock = sess["lock"]
         with lock:
             messages = sess["messages"]
-            messages.append({"role": "user", "content": body.message.strip()})
+            messages.append({"role": "user", "content": safe_message})
             tool_id_counter = [int(sess["tool_seq"])]
 
             for ev in stream_turn(
