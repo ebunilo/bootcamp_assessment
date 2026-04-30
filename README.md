@@ -1,5 +1,57 @@
 # Andela A3: AI Engineering Bootcamp Assessment
 
+This project delivers a **Meridian Electronics** customer-support experience: a streaming web UI backed by **FastAPI**, an **OpenAI** “mini” chat model with tool calling, and a remote **MCP** server for orders, catalog, and customer verification—with **guardrails**, optional **LangSmith** tracing, and **Docker** deployment.
+
+## Architecture (high level)
+
+| Layer | Role |
+|--------|------|
+| **Client** | Browser loads the static UI (`static/`), calls JSON APIs and **SSE** (`/api/chat/stream`) on the same origin as the app (or via the proxy host name). |
+| **Reverse proxy** | **Nginx** terminates TLS and routes **`https://bootcamp.igwilo.com`** to the app upstream (e.g. `http://127.0.0.1:9100` on the host where Docker publishes the container port). |
+| **Application container** | **Uvicorn** runs **`web_app:app`**: session handling, **input guardrails**, OpenAI chat + streaming, MCP JSON-RPC over HTTPS (`mcp_client`), optional LangSmith (`observability`). |
+| **OpenAI** | Chat completions (tools / streaming) using `OPENAI_API_KEY`. |
+| **MCP backend** | Remote **Streamable HTTP** MCP (`MCP_URL`): catalog, auth, orders (`initialize`, `tools/list`, `tools/call`). |
+| **LangSmith** (optional) | Traces LLM and tool spans when `LANGSMITH_API_KEY` / tracing env is set. |
+
+```mermaid
+flowchart LR
+  subgraph clients ["Clients"]
+    U[Browser]
+  end
+
+  subgraph edge ["Public edge"]
+    NGX[Nginx reverse proxy<br/>bootcamp.igwilo.com]
+  end
+
+  subgraph host ["Application host"]
+    DC[Docker Compose<br/>host :9100]
+    subgraph ctr ["Container"]
+      FA[FastAPI + Uvicorn<br/>web_app.py]
+      GR[Guardrails]
+      CH[chat_service<br/>SSE and tool loop]
+      MCPc[mcp_client]
+      OBS[LangSmith optional]
+    end
+  end
+
+  OAI[(OpenAI API)]
+  MCPs[(MCP order backend)]
+  LS[(LangSmith)]
+
+  U -->|HTTPS| NGX
+  NGX -->|proxy_pass http://127.0.0.1:9100| DC
+  DC --> FA
+  FA --> GR
+  FA --> CH
+  CH --> OBS
+  CH --> OAI
+  CH --> MCPc
+  MCPc -->|JSON-RPC HTTPS| MCPs
+  OBS -.->|traces| LS
+```
+
+**Production path:** traffic hits **`https://bootcamp.igwilo.com`** → **Nginx** → Docker-published **Meridian app** on **9100**. Configure Nginx `server_name bootcamp.igwilo.com`, TLS certificates, and `proxy_pass` with settings suitable for **SSE** (e.g. disable buffering for the chat stream path if needed).
+
 ## MCP exploration
 
 The assessment uses a **remote MCP server** exposed over **Streamable HTTP**: JSON-RPC `POST` requests to a single URL (see `MCP_URL`). The helper script [`explore_mcp.py`](explore_mcp.py) performs `initialize`, `tools/list`, and `tools/call` without extra dependencies (stdlib only).
@@ -149,6 +201,24 @@ Only set **`COMPOSE_BUILD_CONTEXT`** if the app directory lives somewhere else (
 
 Exploration was performed with **`explore_mcp.py`** against the configured endpoint; tool descriptions and schemas match what the server returned from **`tools/list`**.
 
+## Automated tests
+
+[`pytest`](https://docs.pytest.org/) suites live under [`tests/`](tests/). They avoid calling the real MCP or OpenAI: **`web_app`** lifespan uses mocked **`_load_mcp_tools`** and **`stream_turn`** where needed.
+
+```bash
+cd bootcamp_assessment
+python3 -m pip install -r requirements.txt
+python3 -m pytest tests/ -v
+```
+
+| Module | What it covers |
+|--------|----------------|
+| [`tests/test_guardrails.py`](tests/test_guardrails.py) | Allowed vs blocked customer text, sanitization, **`GuardrailError`** codes. |
+| [`tests/test_mcp_client.py`](tests/test_mcp_client.py) | **`mcp_tools_to_openai_functions`** shape (no HTTP). |
+| [`tests/test_web_app.py`](tests/test_web_app.py) | **`GET /api/health`**, **`POST /api/sessions`**, **`POST /api/chat/stream`** (guardrail **400**, SSE with mocked stream, **404** session), **`GET /`**. |
+
+Config: [`pytest.ini`](pytest.ini) (`pythonpath = .`).
+
 ## Images
 
 ### Video
@@ -157,7 +227,7 @@ Exploration was performed with **`explore_mcp.py`** against the configured endpo
 ### Test from Deployed App. (Note the url)
 ![Live Customer support](images/inference_02.png)
 
-## Test Guarails
+### Guardrails (manual screenshot)
 ![Guardrail test](images/guardrail.png)
 
 # Monitoring
