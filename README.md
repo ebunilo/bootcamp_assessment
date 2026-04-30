@@ -121,9 +121,45 @@ Heuristics **reduce** prompt injection, jailbreak-style text, and pasted “run 
 ## Web UI, Uvicorn, and Docker
 
 - Local / server process: `uvicorn web_app:app --host 0.0.0.0 --port 9100` (see [`web_app.py`](web_app.py) module docstring).
-- **Docker** ([`Dockerfile`](Dockerfile), [`docker-compose.yml`](docker-compose.yml)): the app listens on **9100** inside the container; Compose publishes **`9100:9100`**. Open **`http://<host>:9100`**. Repo root [`docker-compose.yml`](../docker-compose.yml) uses build context **`./bootcamp_assessment`**.
-- If Uvicorn logs **`Could not import module "web_app"`**, the container likely has an empty or wrong **`/app`** (e.g. a bind mount like **`- .:/app`** from a directory that does not contain **`web_app.py`**). Remove that volume or point it at the full app folder. The Dockerfile runs **`python -c "import web_app"`** at build time so a successful **`docker build`** confirms sources are present in the image.
+- **Docker** ([`Dockerfile`](Dockerfile), repo root [`docker-compose.yml`](../docker-compose.yml)): app listens on **9100**; Compose maps **`9100:9100`**. Open **`http://<host>:9100`**.
+
+### Server layout: `bootcamp/` + clone `bootcamp_assessment`
+
+On the VPS, if you keep the same folder name as in this repo:
+
+```text
+bootcamp/
+  docker-compose.yml      # copy from repo parent (see ../docker-compose.yml)
+  .env                    # OPENAI_API_KEY, MCP_URL, etc.
+  bootcamp_assessment/    # git clone — same tree as local bootcamp_assessment/ (Dockerfile + web_app.py here)
+```
+
+the default build context **`./bootcamp_assessment`** matches — you do **not** need **`COMPOSE_BUILD_CONTEXT`** in **`.env`**.
+
+Only set **`COMPOSE_BUILD_CONTEXT`** if the app directory lives somewhere else (different path or name).
+
+- If Uvicorn logs **`Could not import module "web_app"`** or **`ls: cannot access '/app/web_app.py'`**:
+  1. On the host, confirm **`test -f ./bootcamp_assessment/web_app.py`** (from the directory that contains **`docker-compose.yml`**). Run **`docker compose config`** and verify **`build.context`** points at that folder.
+  2. Rebuild without cache: **`docker compose build --no-cache web`**.
+  3. Inspect the **image** without Compose (skips bind mounts): **`docker run --rm meridian-electronics-web:latest ls -la /app/web_app.py`**. If this works but **`docker compose run web ls …`** fails, you have a **`volumes:`** entry (often in **`docker-compose.override.yml`**) mounting over **`/app`** — remove it or fix the host path.
+  4. Run **`docker compose config`** and check for **`volumes`** under **`web`**.
+- The Dockerfile runs **`python -c "import web_app"`** at build time so **`docker compose build`** fails if sources were not copied into the image.
 
 ---
 
 Exploration was performed with **`explore_mcp.py`** against the configured endpoint; tool descriptions and schemas match what the server returned from **`tools/list`**.
+
+## Images
+
+### Video
+![Product Demo](https://www.loom.com/share/0409f0d674594372903d3086c53c1090)
+
+### Test from Deployed App. (Note the url)
+![Live Customer support](images/inference.png)
+
+## Test Guarails
+![Guardrail test](images/guardrail.png)
+
+# Monitoring
+![Monitoring with LangSmith](images/monitoring.png)
+

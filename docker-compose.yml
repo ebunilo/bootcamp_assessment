@@ -1,9 +1,12 @@
 # Standalone deploy: run from this directory on the server (after copying this folder).
-# Put secrets in `.env` next to this file, then: docker compose up --build -d
+# Put `.env` here, then: docker compose build --no-cache web && docker compose up -d
 # UI: http://<host>:9100
+#
+# Sanity-check image (no bind mounts): docker run --rm meridian-electronics-web:latest ls -la /app/web_app.py
 
 services:
   web:
+    image: meridian-electronics-web:latest
     build:
       context: .
       dockerfile: Dockerfile
