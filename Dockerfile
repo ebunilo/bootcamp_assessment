@@ -16,12 +16,17 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY . /app/
 
+# Fail the image build if the app cannot be imported (clearer than runtime uvicorn errors).
+RUN python -c "import web_app"
+
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
 
 EXPOSE 9100
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9100/api/health', timeout=4)"
 
-CMD ["uvicorn", "web_app:app", "--host", "0.0.0.0", "--port", "9100"]
+# Use the same interpreter that has deps installed; PYTHONPATH ensures /app is importable.
+CMD ["python", "-m", "uvicorn", "web_app:app", "--host", "0.0.0.0", "--port", "9100"]

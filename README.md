@@ -122,6 +122,7 @@ Heuristics **reduce** prompt injection, jailbreak-style text, and pasted “run 
 
 - Local / server process: `uvicorn web_app:app --host 0.0.0.0 --port 9100` (see [`web_app.py`](web_app.py) module docstring).
 - **Docker** ([`Dockerfile`](Dockerfile), [`docker-compose.yml`](docker-compose.yml)): the app listens on **9100** inside the container; Compose publishes **`9100:9100`**. Open **`http://<host>:9100`**. Repo root [`docker-compose.yml`](../docker-compose.yml) uses build context **`./bootcamp_assessment`**.
+- If Uvicorn logs **`Could not import module "web_app"`**, the container likely has an empty or wrong **`/app`** (e.g. a bind mount like **`- .:/app`** from a directory that does not contain **`web_app.py`**). Remove that volume or point it at the full app folder. The Dockerfile runs **`python -c "import web_app"`** at build time so a successful **`docker build`** confirms sources are present in the image.
 
 ---
 
