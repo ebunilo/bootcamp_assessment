@@ -1,0 +1,101 @@
+# Deploys this repository (app root) to SERVER_HOST:DEPLOY_PATH and rebuilds Docker Compose.
+#
+# Place this file under .github/workflows/ at the GIT REPOSITORY ROOT. If your repo is only
+# bootcamp_assessment/, that root is this directory — not a parent monorepo folder.
+#
+# Required repository secrets:
+#   KNOWN_HOSTS    — full known_hosts entry (or file contents) for SERVER_HOST
+#   SERVER_HOST    — hostname or IP
+#   SSH_PRIVATE_KEY — private key for SSH_USER (PEM / OpenSSH format)
+#   SSH_USER       — SSH login user (must be able to run docker compose)
+#   DEPLOY_PATH    — absolute path on the server (must contain docker-compose.yml from this repo)
+#
+# Server must have Docker + Compose v2. Place OPENAI_API_KEY, MCP_URL, etc. in DEPLOY_PATH/.env
+# (that file is never overwritten by this workflow).
+
+name: Deploy to server
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-remote
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Rsync repository to server
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          RSYNC_SSH="ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          rsync -avz \
+            --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            --exclude '__pycache__' \
+            --exclude '.pytest_cache' \
+            --exclude '*.pyc' \
+            -e "$RSYNC_SSH" \
+            ./ "${SSH_USER}@${SERVER_HOST}:${DEPLOY_PATH}/"
+
+      - name: Build and run stack
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "${SSH_USER}@${SERVER_HOST}" \
+            bash -s << EOF
+          set -euo pipefail
+          cd "${DEPLOY_PATH}"
+          if ! test -f docker-compose.yml; then
+            echo "docker-compose.yml not found in ${DEPLOY_PATH}"
+            exit 1
+          fi
+          if ! test -f .env; then
+            echo "Missing .env in deploy directory — create it on the server first."
+            exit 1
+          fi
+          docker compose build --no-cache web
+          docker compose up -d --remove-orphans
+          docker compose ps
+          ok=0
+          for i in \$(seq 1 15); do
+            if curl -fsS --max-time 5 http://127.0.0.1:9100/api/health > /dev/null 2>&1; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "\$ok" != 1 ]; then
+            echo "Health check failed after retries"
+            docker compose logs --tail 80 web || true
+            exit 1
+          fi
+          echo "Health check OK"
+          EOF
