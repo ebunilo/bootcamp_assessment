@@ -34,3 +34,7 @@ Detailed guides live under [`documentation/`](documentation/README.md):
 ### Monitoring (LangSmith)
 
 ![Monitoring with LangSmith](images/monitoring.png)
+
+### Automated Deplpoyment via Gitaction
+
+![Deployment via Gitaction](images/gitaction.png)

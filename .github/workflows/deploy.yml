@@ -8,7 +8,8 @@
 #   SERVER_HOST    — hostname or IP
 #   SSH_PRIVATE_KEY — private key for SSH_USER (PEM / OpenSSH format)
 #   SSH_USER       — SSH login user (must be able to run docker compose)
-#   DEPLOY_PATH    — absolute path on the server (must contain docker-compose.yml from this repo)
+#   DEPLOY_PATH    — absolute path on the server (e.g. /home/ubuntu/meridian-app). Parent dirs are
+#                    created with mkdir -p before rsync. Avoid ~ — use a full path.
 #
 # Server must have Docker + Compose v2. Place OPENAI_API_KEY, MCP_URL, etc. in DEPLOY_PATH/.env
 # (that file is never overwritten by this workflow).
@@ -50,6 +51,10 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           RSYNC_SSH="ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          # rsync cannot create DEPLOY_PATH if parent directories are missing (mkdir failed: No such file or directory).
+          ssh -i "$HOME/.ssh/deploy_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$HOME/.ssh/known_hosts" \
+            "${SSH_USER}@${SERVER_HOST}" \
+            "mkdir -p -- $(printf '%q' "${DEPLOY_PATH}")"
           rsync -avz \
             --delete \
             --exclude '.git' \
