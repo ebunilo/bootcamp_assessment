@@ -27,6 +27,11 @@ Detailed guides live under [`documentation/`](documentation/README.md):
 
 ![Live Customer support](images/inference_02.png)
 
+### Check Order History
+Check order history using email address and pin
+![Order history](images/order_history.png)
+
+
 ### Guardrails (manual test)
 
 ![Guardrail test](images/guardrail.png)
